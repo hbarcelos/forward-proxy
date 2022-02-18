@@ -1,1 +1,3 @@
-/out
+cache/
+out/
+node_modules/
