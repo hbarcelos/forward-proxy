@@ -1,12 +1,14 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-pragma solidity ^0.6.12;
+pragma solidity >=0.5.12;
+
+import {ForwardProxyLike} from "./ForwardProxyLike.sol";
 
 /**
  * @author Henrique Barcelos <henrique@clio.finance>
+ * @title ForwardProxy
  * @notice This contract provides a fallback function that forwards all calls to another contract using the EVM
  * instruction `call`. The success and return data of the call will be returned back to the caller of the proxy.
- * @dev This contract is mostly useful for testing permissioned smart contracts systems in environments where EOAs are
- * not available (i.e.: tests written with `ds-test`) and there is a need to emulate different actors interacting with
+ * @dev This contract is mostly useful for testing permissioned smart contracts systems in environments where EOAs are not available (i.e.: tests written with `ds-test`) and there is a need to emulate different actors interacting with
  * components of the system.
  *
  * Example:
@@ -53,11 +55,20 @@ pragma solidity ^0.6.12;
  * await tx4.wait();
  * ```
  */
-contract ForwardProxy {
+contract ForwardProxy is ForwardProxyLike {
+    /// @dev Uses an arbitrary storage slot to store the target contract.
+    bytes32 internal constant TARGET_SLOT = keccak256(abi.encode("dev.henriquebarcelos.forwardproxy.target"));
+
     /**
-     * @notice The address which calls to this contract must be forwarded to.
+     * @notice Returns the address which calls to this contract must be forwarded to.
+     * @return to The address of the target contract.
      */
-    address public __to;
+    function __to() external view virtual override returns (address payable to) {
+        bytes32 pos = TARGET_SLOT;
+        assembly {
+            to := sload(pos)
+        }
+    }
 
     /**
      * @notice Updates the `to` address and returns the address this contract instance.
@@ -70,24 +81,31 @@ contract ForwardProxy {
      * @param to The contract to which calls to this contract must be forwarded to.
      * @return The address of this contract instance.
      */
-    function _(address to) external returns (address payable) {
-        __to = to;
+    function _(address to) public virtual override returns (address payable) {
+        bytes32 pos = TARGET_SLOT;
+        assembly {
+            sstore(pos, to)
+        }
         return payable(this);
     }
 
     /**
      * @dev This function does not return to its internall call site, it will return directly to the external caller.
      */
-    fallback() external payable virtual {
-        address to = __to;
+    fallback() external payable virtual override {
+        _fallback();
+    }
+
+    function _fallback() internal virtual {
+        bytes32 pos = TARGET_SLOT;
         assembly {
             // Copy msg.data. We take full control of memory in this inline assembly block because it will not return to
             // Solidity code. We overwrite the Solidity scratch pad at memory position 0.
             calldatacopy(0, 0, calldatasize())
 
-            // Call the implementation.
+            // Call the target.
             // out and outsize are 0 because we don't know the size yet.
-            let result := call(gas(), to, callvalue(), 0, calldatasize(), 0, 0)
+            let result := call(gas(), sload(pos), callvalue(), 0, calldatasize(), 0, 0)
 
             // Copy the returned data.
             returndatacopy(0, 0, returndatasize())
@@ -106,7 +124,7 @@ contract ForwardProxy {
     /**
      * @dev This function handles plain ether transfers to this contract.
      */
-    receive() external payable virtual {
+    receive() external payable virtual override {
         revert("ForwardProxy/no-ether-accepted");
     }
 }

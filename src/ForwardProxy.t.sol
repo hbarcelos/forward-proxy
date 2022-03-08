@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-pragma solidity ^0.6.12;
+pragma solidity >=0.5.12;
 
 import {DSTest} from "ds-test/test.sol";
 
@@ -70,9 +70,7 @@ contract ForwardProxyTest is DSTest {
 
     function testProxyForwardsSentEtherToTarget() public {
         PayableTarget payableTarget = new PayableTarget();
-        (address sender, uint256 value) = PayableTarget(
-            proxy._(address(payableTarget))
-        ).funcA{value: 20 ether}();
+        (address sender, uint256 value) = PayableTarget(proxy._(address(payableTarget))).funcA{value: 20 ether}();
 
         assertEq(sender, address(proxy));
         assertEq(value, 20 ether);

@@ -2,13 +2,18 @@
 
 ## Motivation
 
-The `ForwardProxy` is useful for permissioned smart contracts systems in environments where EOAs are not available
+`ForwardProxy` is useful for permissioned smart contracts systems in environments where EOAs are not available
 (i.e.: tests written with [`ds-test`][1]) and there is a need to emulate different actors interacting with components of
-the system.
+the system.  
+It can be thought of as a 1-out-of-∞ multisig to interact with other smart contracts.
+
+ `AuthForwardProxy` is an extension of `ForwardPorxy` that is useful for contracts whose permissioned methods should not
+ be made completely permissionless by using `ForwardProxy`.  
+ It can be thought of as a 1-out-of-N multisig to interact with other smart contracts.
 
 ## How it works?
 
-The `ForwardProxy` provides a fallback function that forwards all calls to another contract using the EVM instruction
+Both `ForwardProxy` and `AuthForwardProxy` provide a fallback function that forwards all calls to another contract using the EVM instruction
 `call`. The success and return data of the call will be returned back to the caller of the proxy.
 
 Notice that this is different from OpenZeppelin's base [`Proxy`][2] contract, which uses `delegatecall` instead.
@@ -61,7 +66,7 @@ TargetB(proxy._(targetB)).targetBMethod();
 
 I'm glad you asked!
 
-`ForwardProxy` also forwards any `ether` sent through it to the target.
+`ForwardProxy`/`AuthForwardProxy` also forward any `ether` sent through it to the target.
 
 ```solidity
 contract PayableTarget {
@@ -82,7 +87,7 @@ PayableTarget payableTarget = new PayableTarget();
 ).funcA{value: 20 ether}();
 ```
 
-However, it's **NOT** possible to make plain `ether` transfers to a `ForwardProxy`:
+However, it's **NOT** possible to make plain `ether` transfers to a `ForwardProxy`/`AuthForwardProxy`:
 
 ```solidity
 payable(proxy).transfer(1 ether); // This will REVERT!
@@ -131,6 +136,36 @@ await tx3.wait();
 system.connect(usr2);
 const tx4 = await system.authorizedMethodB();
 await tx4.wait();
+```
+
+## How to authorize addresses in `AuthForwardProxy`?
+
+Each address allowed into `AuthForwarProxy` is a `ward.` Once an address receives a `ward` status, it can add or remove
+other wards, but it cannot modify the `owner`. The `owner` has root access to the contract.
+
+To avoid naming clashes with the `target` contract, every public function on `AuthForwardProxy` that is not part of the
+`ForwardProxyLike` interface is appended of its own selector:
+
+```solidity
+interface AuthForwardProxyLike {
+    ///@notice Get the owner of the contract.
+    ///@dev The selector for `owner()` is `0x8da5cb5b` and so on...
+    function owner_8da5cb5b() external view returns (address);
+    ///@notice Transfer the ownership of the contract.
+    function transferOwnership_f2fde38b(address who) external;
+    ///@notice Give `who` the ward role.
+    function rely_65fae35e(address who) external;
+    ///@notice Revokes the ward role for `who`.
+    function deny_9c52a7f1(address who) external;
+    ///@notice Gets the ward status of `who`.
+    function wards_bf353dbb(address who) external view returns (uint256);
+}
+```
+
+After deploying the contract, the `owner` can call `rely_65fae35e(address)` to authorize a different address:
+
+```bash
+seth send "$AUTH_FORWARD_PROXY_ADDRESS" "rely_65fae35e(address)" "$WARD_ADDRESS"
 ```
 
   [1]: https://github.com/dapphub/ds-test
